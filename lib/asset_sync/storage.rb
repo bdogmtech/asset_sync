@@ -12,12 +12,12 @@ module AssetSync
     end
 
     def connection
-      @connection ||= Fog::Storage.new(self.config.fog_options)
+      @connection ||= Aws::S3.new
     end
 
     def bucket
       # fixes: https://github.com/rumblelabs/asset_sync/issues/18
-      @bucket ||= connection.directories.get(self.config.fog_directory, :prefix => self.config.assets_prefix)
+      @bucket ||= connection.buckets[self.config.aws_bucket]
     end
 
     def log(msg)
@@ -101,7 +101,7 @@ module AssetSync
       # fixes: https://github.com/rumblelabs/asset_sync/issues/16
       #        (work-around for https://github.com/fog/fog/issues/596)
       files = []
-      bucket.files.each { |f| files << f.key }
+      bucket.objects.each { |f| files << f.key }
       return files
     end
 
@@ -120,7 +120,7 @@ module AssetSync
 
       log "Flagging #{from_remote_files_to_delete.size} file(s) for deletion"
       # Delete unneeded remote files
-      bucket.files.each do |f|
+      bucket.objects.each do |f|
         delete_file(f, from_remote_files_to_delete)
       end
     end
@@ -204,7 +204,7 @@ module AssetSync
         })
       end
 
-      file = bucket.files.create( file ) unless ignore
+      file = bucket.objects.create( file ) unless ignore
     end
 
     def upload_files
@@ -218,13 +218,6 @@ module AssetSync
       local_files_to_upload.each do |f|
         next unless File.file? "#{path}/#{f}" # Only files.
         upload_file f
-      end
-
-      if self.config.cdn_distribution_id && files_to_invalidate.any?
-        log "Invalidating Files"
-        cdn ||= Fog::CDN.new(self.config.fog_options.except(:region))
-        data = cdn.post_invalidation(self.config.cdn_distribution_id, files_to_invalidate)
-        log "Invalidation id: #{data.body["Id"]}"
       end
     end
 
